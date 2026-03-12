@@ -1,62 +1,190 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { ethers } from "ethers";
-import toast from "react-hot-toast";
-import { getCoreContract, getReadProvider, getLevelInfo, getEthPrice } from "../utils/contracts.js";
+import { getCoreContract, getLevelInfo, getEthPrice, ADDRESSES } from "../utils/contracts";
 
-export function useQuests(address, signer) {
-  const [profile,     setProfile]     = useState(null);
-  const [dailyTasks,  setDailyTasks]  = useState(null);
-  const [levelInfo,   setLevelInfo]   = useState(null);
-  const [ethPrice,    setEthPrice]    = useState(2500);
+const toast = {
+  success: (msg) => console.log("✅", msg),
+  error:   (msg) => console.error("❌", msg),
+  info:    (msg) => console.log("ℹ️", msg),
+};
+
+try {
+  const t = (await import("react-hot-toast")).default;
+  toast.success = t.success;
+  toast.error   = t.error;
+  toast.info    = t.custom || t.info || toast.info;
+} catch {}
+
+export function useQuests(wallet) {
+  const { address, signer, isConnected } = wallet || {};
+
+  const [profile,    setProfile]    = useState(null);
+  const [dailyTasks, setDailyTasks] = useState(null);
+  const [levelInfo,  setLevelInfo]  = useState(null);
+  const [ethPrice,   setEthPrice]   = useState(2500);
   const [taskLoading, setTaskLoading] = useState({});
 
+  const loadingRef = useRef(false);
+
   const loadUserData = useCallback(async () => {
-    if (!address) { setProfile(null); setDailyTasks(null); setLevelInfo(null); return; }
+    if (!isConnected || !address || !signer || !ADDRESSES.core) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
-      const provider = getReadProvider();
-      const core     = getCoreContract(provider);
-      const [profileRaw, dailyRaw, price] = await Promise.all([core.getUserProfile(address), core.getDailyTasks(address), getEthPrice()]);
-      setEthPrice(price);
-      const p = { totalXP: Number(profileRaw.totalXP), username: profileRaw.username, usernameSet: profileRaw.usernameSet, tasksCompleted: Number(profileRaw.tasksCompleted), joinedAt: Number(profileRaw.joinedAt), streakCount: Number(profileRaw.streakCount), referralCount: Number(profileRaw.referralCount), referredBy: profileRaw.referredBy };
-      setProfile(p); setLevelInfo(getLevelInfo(p.totalXP));
-      setDailyTasks({ gmDone: dailyRaw.gmDone, deployDone: dailyRaw.deployDone, swapDone: dailyRaw.swapDone, bridgeDone: dailyRaw.bridgeDone, gameDone: dailyRaw.gameDone, referralDone: dailyRaw.referralDone, profileDone: dailyRaw.profileDone });
-    } catch {
-      setProfile({ totalXP: 0, username: "", usernameSet: false, tasksCompleted: 0, joinedAt: 0, streakCount: 0, referralCount: 0, referredBy: ethers.ZeroAddress });
-      setLevelInfo(getLevelInfo(0));
-      setDailyTasks({ gmDone: false, deployDone: false, swapDone: false, bridgeDone: false, gameDone: false, referralDone: false, profileDone: false });
+      const core = getCoreContract(signer);
+      const [prof, tasks] = await Promise.all([
+        core.getUserProfile(address),
+        core.getDailyTasks(address),
+      ]);
+      const xp = Number(prof.totalXP);
+      setProfile({
+        totalXP:        xp,
+        username:       prof.username,
+        usernameSet:    prof.usernameSet,
+        tasksCompleted: Number(prof.tasksCompleted),
+        joinedAt:       Number(prof.joinedAt),
+        streakCount:    Number(prof.streakCount),
+        referralCount:  Number(prof.referralCount),
+        referredBy:     prof.referredBy,
+      });
+      setDailyTasks({
+        gmDone:       tasks.gmDone,
+        deployDone:   tasks.deployDone,
+        swapDone:     tasks.swapDone,
+        bridgeDone:   tasks.bridgeDone,
+        gameDone:     tasks.gameDone,
+        referralDone: tasks.referralDone,
+        profileDone:  tasks.profileDone,
+        mintDone:     tasks.mintDone,
+      });
+      setLevelInfo(getLevelInfo(xp));
+    } catch (err) {
+      console.warn("loadUserData error:", err.message);
+    } finally {
+      loadingRef.current = false;
     }
-  }, [address]);
+  }, [address, signer, isConnected]);
 
-  useEffect(() => { loadUserData(); const i = setInterval(loadUserData, 30000); return () => clearInterval(i); }, [loadUserData]);
+  useEffect(() => {
+    if (isConnected && address && signer) loadUserData();
+  }, [isConnected, address, signer, loadUserData]);
 
-  const executeTask = useCallback(async (taskId, txFn, xpAmount, taskName) => {
-    if (!signer || !address) { toast.error("Connect your wallet first."); return false; }
-    if (taskLoading[taskId]) return false;
-    setTaskLoading(prev => ({ ...prev, [taskId]: true }));
-    const toastId = toast.loading("Completing " + taskName + "...");
+  useEffect(() => {
+    getEthPrice().then(setEthPrice);
+    const iv = setInterval(() => getEthPrice().then(setEthPrice), 120000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const setTaskLoad = (id, val) => setTaskLoading(p => ({ ...p, [id]: val }));
+
+  const executeTask = useCallback(async (taskId, txFn, xp, taskName) => {
+    if (!isConnected || !signer) { toast.error("Connect your wallet first!"); return false; }
+    setTaskLoad(taskId, true);
     try {
       const tx      = await txFn();
-      toast.loading("Transaction submitted...", { id: toastId });
+      toast.info(`⏳ ${taskName} submitted...`);
       const receipt = await tx.wait();
-      if (receipt.status === 0) throw new Error("Transaction reverted.");
-      toast.success("✅ " + taskName + " complete! +" + xpAmount + " XP", { id: toastId, duration: 5000 });
-      await loadUserData();
-      return true;
+      if (receipt.status === 1) {
+        toast.success(`🎉 ${taskName} done! +${xp} XP earned!`);
+        await loadUserData();
+        return true;
+      } else {
+        toast.error(`${taskName} transaction failed.`);
+        return false;
+      }
     } catch (err) {
-      const msg = err?.reason || err?.message || "";
-      const friendly = msg.includes("already done today") ? "Already completed today!" : msg.includes("already set") ? "Profile already set!" : msg.includes("already referred") ? "Address already referred." : msg.includes("cannot refer yourself") ? "Cannot refer yourself!" : msg.includes("incorrect payment") ? "Incorrect ETH amount." : msg.includes("insufficient funds") ? "Insufficient ETH balance." : msg.includes("user rejected") || err.code === 4001 ? "Transaction rejected." : msg.slice(0, 100) || "Transaction failed.";
-      toast.error(friendly, { id: toastId, duration: 6000 });
+      const msg = err?.reason || err?.data?.message || err?.message || "Transaction failed";
+      if (msg.includes("user rejected") || msg.includes("User denied")) {
+        toast.error("Transaction cancelled.");
+      } else if (msg.includes("already done")) {
+        toast.error("Task already completed today!");
+      } else if (msg.includes("insufficient funds")) {
+        toast.error("Insufficient ETH balance.");
+      } else {
+        toast.error(msg.slice(0, 80));
+      }
       return false;
-    } finally { setTaskLoading(prev => ({ ...prev, [taskId]: false })); }
-  }, [signer, address, taskLoading, loadUserData]);
+    } finally {
+      setTaskLoad(taskId, false);
+    }
+  }, [isConnected, signer, loadUserData]);
 
-  const completeGM       = useCallback(async ()    => executeTask("gm",       async () => getCoreContract(signer).completeGMTask({ value: ethers.parseEther("0.0001") }), 50,  "GM Base"), [signer, executeTask]);
-  const completeDeploy   = useCallback(async (c)   => { if (!ethers.isAddress(c)) { toast.error("Invalid contract address."); return false; } return executeTask("deploy",   async () => getCoreContract(signer).completeDeployTask(c, { value: ethers.parseEther("0.0002") }), 100, "Deploy Contract"); }, [signer, executeTask]);
-  const completeSwap     = useCallback(async ()    => executeTask("swap",     async () => getCoreContract(signer).completeSwapTask({ value: ethers.parseEther("0.0001") }), 75,  "Swap on Base"), [signer, executeTask]);
-  const completeBridge   = useCallback(async ()    => executeTask("bridge",   async () => getCoreContract(signer).completeBridgeTask({ value: ethers.parseEther("0.0002") }), 100, "Bridge to Base"), [signer, executeTask]);
-  const completeGame     = useCallback(async ()    => executeTask("game",     async () => getCoreContract(signer).completeGameTask({ value: ethers.parseEther("0.0001") }), 75,  "Play Mini-Game"), [signer, executeTask]);
-  const completeReferral = useCallback(async (r)   => { if (!ethers.isAddress(r)) { toast.error("Invalid referral address."); return false; } if (r.toLowerCase() === address?.toLowerCase()) { toast.error("Cannot refer yourself."); return false; } return executeTask("referral", async () => getCoreContract(signer).completeReferralTask(r, { value: ethers.parseEther("0.0001") }), 150, "Refer a Friend"); }, [signer, address, executeTask]);
-  const completeProfile  = useCallback(async (u)   => { if (!u?.trim()) { toast.error("Username cannot be empty."); return false; } if (u.trim().length > 32) { toast.error("Username max 32 characters."); return false; } return executeTask("profile", async () => getCoreContract(signer).completeProfileTask(u.trim(), { value: ethers.parseEther("0.0001") }), 50, "Set Profile"); }, [signer, executeTask]);
+  const completeGM = useCallback(async () => {
+    return executeTask("gm", async () =>
+      getCoreContract(signer).completeGMTask({ value: ethers.parseEther("0.0001") }),
+      50, "GM Base"
+    );
+  }, [signer, executeTask]);
 
-  return { profile, dailyTasks, levelInfo, ethPrice, taskLoading, loadUserData, completeGM, completeDeploy, completeSwap, completeBridge, completeGame, completeReferral, completeProfile };
-}
+  const completeDeploy = useCallback(async (contractAddr) => {
+    if (!ethers.isAddress(contractAddr)) { toast.error("Invalid contract address."); return false; }
+    return executeTask("deploy", async () =>
+      getCoreContract(signer).completeDeployTask(contractAddr, { value: ethers.parseEther("0.0002") }),
+      100, "Deploy Contract"
+    );
+  }, [signer, executeTask]);
+
+  const completeSwap = useCallback(async () => {
+    return executeTask("swap", async () =>
+      getCoreContract(signer).completeSwapTask({ value: ethers.parseEther("0.0001") }),
+      75, "Swap on Base"
+    );
+  }, [signer, executeTask]);
+
+  const completeBridge = useCallback(async () => {
+    return executeTask("bridge", async () =>
+      getCoreContract(signer).completeBridgeTask({ value: ethers.parseEther("0.0002") }),
+      100, "Bridge to Base"
+    );
+  }, [signer, executeTask]);
+
+  const completeGame = useCallback(async () => {
+    return executeTask("game", async () =>
+      getCoreContract(signer).completeGameTask({ value: ethers.parseEther("0.0001") }),
+      75, "Mini-Game"
+    );
+  }, [signer, executeTask]);
+
+  const completeReferral = useCallback(async (referred) => {
+    if (!ethers.isAddress(referred)) { toast.error("Invalid wallet address."); return false; }
+    if (referred.toLowerCase() === address?.toLowerCase()) { toast.error("Cannot refer yourself!"); return false; }
+    return executeTask("referral", async () =>
+      getCoreContract(signer).completeReferralTask(referred, { value: ethers.parseEther("0.0001") }),
+      150, "Refer a Friend"
+    );
+  }, [signer, address, executeTask]);
+
+  const completeProfile = useCallback(async (username) => {
+    if (!username || username.trim().length === 0) { toast.error("Username cannot be empty."); return false; }
+    if (username.length > 32) { toast.error("Username too long (max 32 chars)."); return false; }
+    return executeTask("profile", async () =>
+      getCoreContract(signer).completeProfileTask(username.trim(), { value: ethers.parseEther("0.0001") }),
+      50, "Set Profile"
+    );
+  }, [signer, executeTask]);
+
+  const completeMintNFT = useCallback(async (nftContract) => {
+    if (!ethers.isAddress(nftContract)) { toast.error("Invalid NFT contract address."); return false; }
+    return executeTask("mint", async () =>
+      getCoreContract(signer).completeMintNFTTask(nftContract, { value: ethers.parseEther("0.0001") }),
+      125, "Mint NFT"
+    );
+  }, [signer, executeTask]);
+
+  return {
+    profile,
+    dailyTasks,
+    levelInfo,
+    ethPrice,
+    taskLoading,
+    loadUserData,
+    completeGM,
+    completeDeploy,
+    completeSwap,
+    completeBridge,
+    completeGame,
+    completeReferral,
+    completeProfile,
+    completeMintNFT,
+  };
+      }
