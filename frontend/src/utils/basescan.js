@@ -1,47 +1,17 @@
-const CDP_RPC_URL = import.meta.env.VITE_CDP_RPC_URL || "";
-const CDP_KEY = CDP_RPC_URL.split("/").pop();
+const BLOCKSCOUT_URL = "https://base.blockscout.com/api";
 
-async function cdpFetch(address, pageToken = null) {
-  const url = new URL("https://api.cdp.coinbase.com/platform/v1/networks/base-mainnet/addresses/" + address + "/transactions");
-  url.searchParams.set("page_size", "200");
-  if (pageToken) url.searchParams.set("page_token", pageToken);
-  const res = await fetch(url.toString(), {
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer " + CDP_KEY,
-    }
-  });
-  if (!res.ok) throw new Error("CDP API error: " + res.status);
-  return res.json();
+async function blockscoutFetch(address) {
+  const url = `${BLOCKSCOUT_URL}?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=asc&limit=10000`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Blockscout error: " + res.status);
+  const data = await res.json();
+  if (data.status === "0" && data.message !== "No transactions found") return [];
+  return Array.isArray(data.result) ? data.result : [];
 }
 
 export async function fetchTransactions(address) {
-  try {
-    const txs = [];
-    let pageToken = null;
-    let pages = 0;
-    do {
-      const data = await cdpFetch(address, pageToken);
-      const batch = data.transactions || [];
-      batch.forEach(tx => {
-        txs.push({
-          hash:      tx.transaction_hash || tx.hash || "",
-          from:      tx.from?.address   || tx.from || "",
-          to:        tx.to?.address     || tx.to   || "",
-          value:     tx.native_amount?.value ? String(Math.round(parseFloat(tx.native_amount.value) * 1e18)) : "0",
-          timeStamp: tx.block_time ? String(Math.floor(new Date(tx.block_time).getTime() / 1000)) : "0",
-          gasUsed:   tx.gas_used   || tx.receipt?.gas_used || "0",
-          isError:   (tx.status === "failed" || tx.error) ? "1" : "0",
-        });
-      });
-      pageToken = data.next_page_token || null;
-      pages++;
-    } while (pageToken && pages < 10);
-    return txs;
-  } catch (err) {
-    console.warn("CDP transaction fetch failed:", err.message);
-    return [];
-  }
+  try { return await blockscoutFetch(address); }
+  catch (err) { console.warn("Blockscout fetch failed:", err.message); return []; }
 }
 
 export function analyzeTransactions(address, txs) {
@@ -52,8 +22,8 @@ export function analyzeTransactions(address, txs) {
   const first  = sorted[0];
   const last   = sorted[sorted.length - 1];
   const walletAgeDays = Math.floor((now - Number(first.timeStamp)) / 86400);
-  const sentTxs     = txs.filter(tx => tx.from.toLowerCase() === addr && tx.isError === "0");
-  const receivedTxs = txs.filter(tx => tx.to?.toLowerCase() === addr  && tx.isError === "0");
+  const sentTxs      = txs.filter(tx => tx.from.toLowerCase() === addr && tx.isError === "0");
+  const receivedTxs  = txs.filter(tx => tx.to?.toLowerCase() === addr  && tx.isError === "0");
   const totalSentWei = sentTxs.reduce((acc, tx) => acc + BigInt(tx.value || "0"), 0n);
   const totalRecvWei = receivedTxs.reduce((acc, tx) => acc + BigInt(tx.value || "0"), 0n);
   const successTxs   = txs.filter(tx => tx.isError === "0");
