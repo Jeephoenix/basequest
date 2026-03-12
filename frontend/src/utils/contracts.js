@@ -18,10 +18,17 @@ export const CORE_ABI = [
   "function completeReferralTask(address referred) external payable",
   "function completeProfileTask(string calldata username) external payable",
   "function completeMintNFTTask(address nftContract) external payable",
+  "function completeSwapAerodrome() external payable",
+  "function completeSwapUniswap() external payable",
+  "function completeSwapJumper() external payable",
+  "function completeSwapRelay() external payable",
+  "function completeBridgeJumper() external payable",
+  "function completeBridgeRelay() external payable",
   "function getUserXP(address user) external view returns (uint256)",
   "function getUserLevel(address user) external view returns (uint256)",
   "function getUserProfile(address user) external view returns (uint256 totalXP, string username, bool usernameSet, uint256 tasksCompleted, uint256 joinedAt, uint256 streakCount, uint256 referralCount, address referredBy)",
   "function getDailyTasks(address user) external view returns (bool gmDone, bool deployDone, bool swapDone, bool bridgeDone, bool gameDone, bool referralDone, bool profileDone, bool mintDone)",
+  "function getSubTasks(address user) external view returns (bool swapAerodromeDone, bool swapUniswapDone, bool swapJumperDone, bool swapRelayDone, bool bridgeJumperDone, bool bridgeRelayDone)",
   "function getTopUsers(uint256 count) external view returns (address[] topAddresses, uint256[] topXPs)",
   "function getTotalUsers() external view returns (uint256)",
   "function getUserStreak(address user) external view returns (uint256)",
@@ -119,36 +126,27 @@ export async function getEthPrice() {
 }
 export function ethToUsd(ethAmount, ethPrice) { return (parseFloat(ethAmount || 0) * (ethPrice || 2500)).toFixed(2); }
 
-// ── Referral code helpers ──────────────────────────────────────────────────
+// ── Referral helpers ───────────────────────────────────────────────────────
 export function generateReferralCode(address) {
   if (!address || address.length < 42) return null;
   const a = address.toLowerCase();
-  const part1 = a.slice(2, 8).toUpperCase();
-  const part2 = a.slice(-4).toUpperCase();
-  return `BQ-${part1}-${part2}`;
+  return `BQ-${a.slice(2, 8).toUpperCase()}-${a.slice(-4).toUpperCase()}`;
 }
-
 export function generateShareLink(address) {
-  const base = typeof window !== "undefined"
-    ? window.location.origin
-    : "https://basequest.netlify.app";
+  const base = typeof window !== "undefined" ? window.location.origin : "https://basequest.netlify.app";
   return `${base}?ref=${address}`;
 }
-
 export function parseReferralInput(input) {
   if (!input) return null;
   const trimmed = input.trim();
-  // Plain address
   if (ethers.isAddress(trimmed)) return trimmed;
-  // Share link with ?ref=0x...
   try {
-    const url     = new URL(trimmed);
-    const refAddr = url.searchParams.get("ref");
-    if (refAddr && ethers.isAddress(refAddr)) return refAddr;
+    const url = new URL(trimmed);
+    const ref = url.searchParams.get("ref");
+    if (ref && ethers.isAddress(ref)) return ref;
   } catch {}
   return null;
 }
-
 export function getRefFromUrl() {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
@@ -157,13 +155,36 @@ export function getRefFromUrl() {
 }
 // ──────────────────────────────────────────────────────────────────────────
 
+// ── Platform links ─────────────────────────────────────────────────────────
+export const SWAP_PLATFORMS = [
+  { id: "swapAerodrome", name: "Swap on Aerodrome", icon: "✈️", url: "https://aerodrome.finance/swap",         xp: 50, color: "#ff6b6b" },
+  { id: "swapUniswap",   name: "Swap on Uniswap",   icon: "🦄", url: "https://app.uniswap.org/#/swap?chain=base", xp: 50, color: "#ff007a" },
+  { id: "swapJumper",    name: "Swap on Jumper",    icon: "🦗", url: "https://jumper.exchange/?fromChain=8453&toChain=8453", xp: 50, color: "#a855f7" },
+  { id: "swapRelay",     name: "Swap on Relay",     icon: "⚡", url: "https://relay.link/swap?fromChainId=8453&toChainId=8453", xp: 50, color: "#00d4ff" },
+];
+
+export const BRIDGE_PLATFORMS = [
+  { id: "bridgeJumper", name: "Bridge via Jumper", icon: "🦗", url: "https://jumper.exchange/?fromChain=1&toChain=8453", xp: 50, color: "#a855f7" },
+  { id: "bridgeRelay",  name: "Bridge via Relay",  icon: "⚡", url: "https://relay.link/bridge/base",                   xp: 50, color: "#00d4ff" },
+];
+
+export const NFT_PLATFORMS = [
+  { id: "mintZora",      name: "Mint on Zora",       icon: "🟡", url: "https://zora.co/explore/base",          color: "#f0b429" },
+  { id: "mintOpensea",   name: "Mint on OpenSea",    icon: "🌊", url: "https://opensea.io/collection?chain=base", color: "#2081e2" },
+  { id: "mintMintfun",   name: "Mint on mint.fun",   icon: "🎯", url: "https://mint.fun/base",                  color: "#00c853" },
+  { id: "mintMagiceden", name: "Mint on Magic Eden", icon: "🪄", url: "https://magiceden.io/collections/base", color: "#e42575" },
+  { id: "mintBasepaint", name: "Mint on BasePaint",  icon: "🎨", url: "https://basepaint.xyz",                  color: "#0052ff" },
+  { id: "mintSuperrare", name: "Mint on SuperRare",  icon: "💎", url: "https://superrare.com",                  color: "#00d4ff" },
+];
+// ──────────────────────────────────────────────────────────────────────────
+
 export const TASKS = [
   { id: "gm",       name: "GM Base",        description: "Send a GM on-chain message",           xp: 50,  ethCost: "0.00005", icon: "☀️", daily: true,  field: null },
   { id: "deploy",   name: "Deploy Contract", description: "Deploy a contract to Base Mainnet",    xp: 100, ethCost: "0.00005", icon: "🚀", daily: true,  field: "deployedContract", fieldLabel: "Deployed Contract Address", fieldPlaceholder: "0x..." },
-  { id: "swap",     name: "Swap on Base",    description: "Confirm a swap on Base",               xp: 75,  ethCost: "0.00005", icon: "🔄", daily: true,  field: null },
-  { id: "bridge",   name: "Bridge to Base",  description: "Bridge assets using the Base Bridge",  xp: 100, ethCost: "0.00005", icon: "🌉", daily: true,  field: null },
+  { id: "swap",     name: "Swap on Base",    description: "Swap on any Base DEX",                 xp: 75,  ethCost: "0.00005", icon: "🔄", daily: true,  field: null, hasSubs: true },
+  { id: "bridge",   name: "Bridge to Base",  description: "Bridge assets to Base",                xp: 100, ethCost: "0.00005", icon: "🌉", daily: true,  field: null, hasSubs: true },
   { id: "game",     name: "Play Mini-Game",  description: "Enter the 5-minute prize pool game",   xp: 75,  ethCost: "0.00005", icon: "🎲", daily: true,  field: null },
-  { id: "mint",     name: "Mint NFT",        description: "Mint any NFT on Base Mainnet",         xp: 125, ethCost: "0.00005", icon: "🎨", daily: true,  field: "nftContract", fieldLabel: "NFT Contract Address", fieldPlaceholder: "0x..." },
+  { id: "mint",     name: "Mint NFT",        description: "Mint any NFT on Base Mainnet",         xp: 125, ethCost: "0.00005", icon: "🎨", daily: true,  field: "nftContract", fieldLabel: "NFT Contract Address", fieldPlaceholder: "0x...", hasSubs: true },
   { id: "referral", name: "Refer a Friend",  description: "Share your link & earn 150 XP",       xp: 150, ethCost: "0.00005", icon: "👥", daily: true,  field: "referred", fieldLabel: "Friend's Wallet Address or Share Link", fieldPlaceholder: "0x... or paste share link" },
   { id: "profile",  name: "Set Profile",     description: "Set your on-chain username",           xp: 50,  ethCost: "0.00005", icon: "🪪", daily: false, oneTime: true, field: "username", fieldLabel: "Username (max 32 chars)", fieldPlaceholder: "based_degen" },
   { id: "streak",   name: "Streak Bonus",    description: "Auto-awarded every 7 days",            xp: 200, ethCost: "0",       icon: "🔥", daily: false, auto: true },
