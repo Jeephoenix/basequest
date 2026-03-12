@@ -1,23 +1,46 @@
-const API_KEY = import.meta.env.VITE_BASESCAN_API_KEY || "";
-const BASE_URL = "https://api.basescan.org/api";
+const CDP_RPC_URL = import.meta.env.VITE_CDP_RPC_URL || "";
+const CDP_KEY = CDP_RPC_URL.split("/").pop();
 
-async function basescanFetch(params) {
-  const url = new URL(BASE_URL);
-  Object.entries({ ...params, apikey: API_KEY }).forEach(([k, v]) => url.searchParams.set(k, String(v)));
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error("Basescan HTTP error: " + res.status);
-  const data = await res.json();
-  if (data.status === "0" && data.message !== "No transactions found") throw new Error(data.result || data.message || "Basescan API error");
-  return data.result;
+async function cdpFetch(address, pageToken = null) {
+  const url = new URL("https://api.cdp.coinbase.com/platform/v1/networks/base-mainnet/addresses/" + address + "/transactions");
+  url.searchParams.set("page_size", "200");
+  if (pageToken) url.searchParams.set("page_token", pageToken);
+  const res = await fetch(url.toString(), {
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + CDP_KEY,
+    }
+  });
+  if (!res.ok) throw new Error("CDP API error: " + res.status);
+  return res.json();
 }
 
 export async function fetchTransactions(address) {
   try {
-    const result = await basescanFetch({ module: "account", action: "txlist", address, startblock: 0, endblock: 99999999, sort: "asc", offset: 10000, page: 1 });
-    return Array.isArray(result) ? result : [];
+    const txs = [];
+    let pageToken = null;
+    let pages = 0;
+    do {
+      const data = await cdpFetch(address, pageToken);
+      const batch = data.transactions || [];
+      batch.forEach(tx => {
+        txs.push({
+          hash:      tx.transaction_hash || tx.hash || "",
+          from:      tx.from?.address   || tx.from || "",
+          to:        tx.to?.address     || tx.to   || "",
+          value:     tx.native_amount?.value ? String(Math.round(parseFloat(tx.native_amount.value) * 1e18)) : "0",
+          timeStamp: tx.block_time ? String(Math.floor(new Date(tx.block_time).getTime() / 1000)) : "0",
+          gasUsed:   tx.gas_used   || tx.receipt?.gas_used || "0",
+          isError:   (tx.status === "failed" || tx.error) ? "1" : "0",
+        });
+      });
+      pageToken = data.next_page_token || null;
+      pages++;
+    } while (pageToken && pages < 10);
+    return txs;
   } catch (err) {
-    if (err.message?.includes("No transactions")) return [];
-    throw err;
+    console.warn("CDP transaction fetch failed:", err.message);
+    return [];
   }
 }
 
@@ -33,20 +56,22 @@ export function analyzeTransactions(address, txs) {
   const receivedTxs = txs.filter(tx => tx.to?.toLowerCase() === addr  && tx.isError === "0");
   const totalSentWei = sentTxs.reduce((acc, tx) => acc + BigInt(tx.value || "0"), 0n);
   const totalRecvWei = receivedTxs.reduce((acc, tx) => acc + BigInt(tx.value || "0"), 0n);
-  const nonZeroTxs = txs.filter(tx => BigInt(tx.value || "0") > 0n && tx.isError === "0");
-  const largestTx  = nonZeroTxs.length ? nonZeroTxs.reduce((a, b) => BigInt(b.value) > BigInt(a.value) ? b : a) : null;
-  const smallestTx = nonZeroTxs.length ? nonZeroTxs.reduce((a, b) => BigInt(b.value) < BigInt(a.value) ? b : a) : null;
   const successTxs   = txs.filter(tx => tx.isError === "0");
   const totalGasUsed = successTxs.reduce((acc, tx) => acc + Number(tx.gasUsed || 0), 0);
   const avgGasUsed   = successTxs.length ? Math.round(totalGasUsed / successTxs.length) : 0;
   const failedCount  = txs.filter(tx => tx.isError === "1").length;
   const contractCounts = {};
-  txs.forEach(tx => { if (tx.to && tx.to !== "" && tx.to.toLowerCase() !== addr) { const to = tx.to.toLowerCase(); contractCounts[to] = (contractCounts[to] || 0) + 1; } });
+  txs.forEach(tx => {
+    if (tx.to && tx.to !== "" && tx.to.toLowerCase() !== addr) {
+      const to = tx.to.toLowerCase();
+      contractCounts[to] = (contractCounts[to] || 0) + 1;
+    }
+  });
   const uniqueContracts = Object.keys(contractCounts).length;
   const topContracts = Object.entries(contractCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([contract, count]) => ({ contract, count }));
   const heatmap   = buildHeatmap(txs, 90);
   const baseScore = computeBaseScore({ totalTxs: txs.length, walletAgeDays, uniqueContracts, totalSentEth: Number(totalSentWei) / 1e18, totalRecvEth: Number(totalRecvWei) / 1e18, failedCount, streakDays: heatmap.longestStreak });
-  return { address, walletAgeDays, totalTxs: txs.length, successTxs: successTxs.length, failedCount, firstTx: first ? formatTx(first) : null, lastTx: last ? formatTx(last) : null, largestTx: largestTx ? formatTx(largestTx) : null, smallestTx: smallestTx ? formatTx(smallestTx) : null, totalSentEth: (Number(totalSentWei) / 1e18).toFixed(6), totalRecvEth: (Number(totalRecvWei) / 1e18).toFixed(6), avgGasUsed, uniqueContracts, topContracts, heatmap, baseScore };
+  return { address, walletAgeDays, totalTxs: txs.length, successTxs: successTxs.length, failedCount, firstTx: first ? formatTx(first) : null, lastTx: last ? formatTx(last) : null, totalSentEth: (Number(totalSentWei) / 1e18).toFixed(6), totalRecvEth: (Number(totalRecvWei) / 1e18).toFixed(6), avgGasUsed, uniqueContracts, topContracts, heatmap, baseScore };
 }
 
 function formatTx(tx) {
@@ -57,9 +82,18 @@ function buildHeatmap(txs, days) {
   const now      = Math.floor(Date.now() / 1000);
   const startDay = now - days * 86400;
   const cells    = new Array(days).fill(0);
-  txs.forEach(tx => { const ts = Number(tx.timeStamp); if (ts >= startDay) { const dayIdx = Math.floor((ts - startDay) / 86400); if (dayIdx >= 0 && dayIdx < days) cells[dayIdx]++; } });
+  txs.forEach(tx => {
+    const ts = Number(tx.timeStamp);
+    if (ts >= startDay) {
+      const dayIdx = Math.floor((ts - startDay) / 86400);
+      if (dayIdx >= 0 && dayIdx < days) cells[dayIdx]++;
+    }
+  });
   let longestStreak = 0, currentStreak = 0;
-  for (const count of cells) { if (count > 0) { currentStreak++; longestStreak = Math.max(longestStreak, currentStreak); } else currentStreak = 0; }
+  for (const count of cells) {
+    if (count > 0) { currentStreak++; longestStreak = Math.max(longestStreak, currentStreak); }
+    else currentStreak = 0;
+  }
   return { cells, maxCount: Math.max(...cells, 1), longestStreak, days };
 }
 
@@ -75,7 +109,7 @@ function computeBaseScore({ totalTxs, walletAgeDays, uniqueContracts, totalSentE
 }
 
 function emptyAnalytics(address) {
-  return { address, walletAgeDays: 0, totalTxs: 0, successTxs: 0, failedCount: 0, firstTx: null, lastTx: null, largestTx: null, smallestTx: null, totalSentEth: "0.000000", totalRecvEth: "0.000000", avgGasUsed: 0, uniqueContracts: 0, topContracts: [], heatmap: { cells: new Array(90).fill(0), maxCount: 1, longestStreak: 0, days: 90 }, baseScore: 0 };
+  return { address, walletAgeDays: 0, totalTxs: 0, successTxs: 0, failedCount: 0, firstTx: null, lastTx: null, totalSentEth: "0.000000", totalRecvEth: "0.000000", avgGasUsed: 0, uniqueContracts: 0, topContracts: [], heatmap: { cells: new Array(90).fill(0), maxCount: 1, longestStreak: 0, days: 90 }, baseScore: 0 };
 }
 
 export async function getWalletAnalysis(address) {
