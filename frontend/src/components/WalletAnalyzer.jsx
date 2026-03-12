@@ -54,7 +54,7 @@ export default function WalletAnalyzer({ wallet }) {
             <p className="font-mono text-sm text-[#8892a4] mb-1">Base Score</p>
             <p className="font-[Orbitron] text-6xl font-black mb-1" style={{ color: scoreColor(analysis.baseScore) }}>{analysis.baseScore}</p>
             <p className="font-display font-bold text-lg text-white">{scoreLabel(analysis.baseScore)}</p>
-            <p className="font-mono text-xs text-[#8892a4] mt-1">out of 1000</p>
+            <p className="font-mono text-xs text-[#8892a4] mt-1">out of 100</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
