@@ -17,8 +17,8 @@ export default function WalletAnalyzer({ wallet }) {
     finally { setLoading(false); }
   };
 
-  const scoreColor = (s) => s >= 700 ? "#00c853" : s >= 400 ? "#f0b429" : "#ff3b3b";
-  const scoreLabel = (s) => s >= 700 ? "OG Farmer" : s >= 400 ? "Active User" : "Newbie";
+  const scoreColor = (s) => s >= 70 ? "#00c853" : s >= 40 ? "#f0b429" : "#ff3b3b";
+const scoreLabel = (s) => s >= 70 ? "OG Farmer" : s >= 40 ? "Active User" : "Newbie";
 
   return (
     <div className="max-w-3xl mx-auto animate-in">
