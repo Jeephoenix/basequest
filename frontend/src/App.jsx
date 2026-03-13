@@ -1,19 +1,19 @@
 import { useState, useEffect } from "react";
-import { useWallet }    from "./hooks/useWallet";
-import { useQuests }    from "./hooks/useQuests";
-import Navbar           from "./components/Navbar";
-import Dashboard        from "./components/Dashboard";
-import QuestBoard       from "./components/QuestBoard";
-import BossRaid         from "./components/BossRaid";
-import Leaderboard      from "./components/Leaderboard";
-import WalletAnalyzer   from "./components/WalletAnalyzer";
+import { useWallet }     from "./hooks/useWallet";
+import { useQuests }     from "./hooks/useQuests";
+import Navbar            from "./components/Navbar";
+import Dashboard         from "./components/Dashboard";
+import QuestBoard        from "./components/QuestBoard";
+import BossRaid          from "./components/BossRaid";
+import Leaderboard       from "./components/Leaderboard";
+import WalletAnalyzer    from "./components/WalletAnalyzer";
 
 const TABS = [
-  { id: "dashboard",  label: "Dashboard",       icon: "🏠" },
-  { id: "quests",     label: "Quests",           icon: "🗺️" },
-  { id: "bossraid",   label: "Boss Raid",        icon: "🐉" },
-  { id: "leaderboard",label: "Leaderboard",      icon: "🏆" },
-  { id: "analyzer",   label: "Wallet Analyzer",  icon: "🔍" },
+  { id: "dashboard",   label: "Dashboard",      icon: "🏠" },
+  { id: "quests",      label: "Quests",          icon: "🗺️" },
+  { id: "bossraid",    label: "Boss Raid",       icon: "🐉" },
+  { id: "leaderboard", label: "Leaderboard",     icon: "🏆" },
+  { id: "analyzer",    label: "Wallet Analyzer", icon: "🔍" },
 ];
 
 export default function App() {
@@ -21,70 +21,60 @@ export default function App() {
   const wallet = useWallet();
   const quests = useQuests(wallet);
 
-  // Auto-switch to quests if came via referral link
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("ref")) setActiveTab("quests");
-  }, []);
+  // Merge userProfile into wallet so Navbar can show XP/level
+  const walletWithProfile = { ...wallet, userProfile: quests.userProfile };
 
   const renderTab = () => {
     switch (activeTab) {
-      case "dashboard":   return <Dashboard   quests={quests} wallet={wallet} setActiveTab={setActiveTab} />;
-      case "quests":      return <QuestBoard  quests={quests} wallet={wallet} />;
-      case "bossraid":    return <BossRaid    wallet={wallet} />;
-      case "leaderboard": return <Leaderboard wallet={wallet} />;
+      case "dashboard":   return <Dashboard    quests={quests} wallet={wallet} setActiveTab={setActiveTab} />;
+      case "quests":      return <QuestBoard   quests={quests} wallet={wallet} />;
+      case "bossraid":    return <BossRaid     wallet={wallet} />;
+      case "leaderboard": return <Leaderboard  wallet={wallet} />;
       case "analyzer":    return <WalletAnalyzer wallet={wallet} />;
-      default:            return <Dashboard   quests={quests} wallet={wallet} setActiveTab={setActiveTab} />;
+      default:            return <Dashboard    quests={quests} wallet={wallet} setActiveTab={setActiveTab} />;
     }
   };
 
   return (
     <div style={{
-      minHeight:       "100vh",
-      background:      "#0a0b0f",
-      color:           "white",
-      fontFamily:      "'Inter', sans-serif",
+      minHeight:  "100vh",
+      background: "#0a0b0f",
+      color:      "white",
+      fontFamily: "'Inter', sans-serif",
     }}>
 
-      {/* Navbar */}
-      <Navbar wallet={wallet} />
+      {/* Navbar — gets wallet + userProfile merged */}
+      <Navbar wallet={walletWithProfile} />
 
       {/* Tab bar */}
       <div style={{
-        borderBottom:    "1px solid rgba(255,255,255,0.06)",
-        background:      "rgba(255,255,255,0.02)",
-        backdropFilter:  "blur(10px)",
-        position:        "sticky",
-        top:             "64px",
-        zIndex:          90,
-        overflowX:       "auto",
+        borderBottom:   "1px solid rgba(255,255,255,0.06)",
+        background:     "rgba(255,255,255,0.02)",
+        backdropFilter: "blur(10px)",
+        position:       "sticky",
+        top:            "64px",
+        zIndex:         90,
+        overflowX:      "auto",
       }}>
-        <div style={{
-          display:        "flex",
-          maxWidth:       "1100px",
-          margin:         "0 auto",
-          padding:        "0 16px",
-        }}>
+        <div style={{ display: "flex", maxWidth: "1100px", margin: "0 auto", padding: "0 16px" }}>
           {TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
-                background:     "none",
-                border:         "none",
-                borderBottom:   activeTab === tab.id
-                                  ? "2px solid #0052ff"
-                                  : "2px solid transparent",
-                padding:        "14px 18px",
-                color:          activeTab === tab.id ? "white" : "#8892a4",
-                fontWeight:     activeTab === tab.id ? "700" : "500",
-                fontSize:       "13px",
-                cursor:         "pointer",
-                whiteSpace:     "nowrap",
-                transition:     "all 0.2s",
-                display:        "flex",
-                alignItems:     "center",
-                gap:            "6px",
+                background:   "none",
+                border:       "none",
+                borderBottom: activeTab === tab.id ? "2px solid #0052ff" : "2px solid transparent",
+                padding:      "14px 18px",
+                color:        activeTab === tab.id ? "white" : "#8892a4",
+                fontWeight:   activeTab === tab.id ? "700" : "500",
+                fontSize:     "13px",
+                cursor:       "pointer",
+                whiteSpace:   "nowrap",
+                transition:   "all 0.2s",
+                display:      "flex",
+                alignItems:   "center",
+                gap:          "6px",
               }}
             >
               <span>{tab.icon}</span>
@@ -111,7 +101,7 @@ export default function App() {
         {renderTab()}
       </div>
 
-      {/* Bottom mobile nav */}
+      {/* Mobile bottom nav */}
       <div style={{
         display:        "flex",
         position:       "fixed",
@@ -131,19 +121,19 @@ export default function App() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             style={{
-              flex:        1,
-              background:  "none",
-              border:      "none",
-              color:       activeTab === tab.id ? "#0052ff" : "#8892a4",
-              fontWeight:  activeTab === tab.id ? "700" : "400",
-              fontSize:    "10px",
-              cursor:      "pointer",
-              display:     "flex",
-              flexDirection:"column",
-              alignItems:  "center",
-              gap:         "4px",
-              padding:     "4px 0",
-              transition:  "color 0.2s",
+              flex:          1,
+              background:    "none",
+              border:        "none",
+              color:         activeTab === tab.id ? "#0052ff" : "#8892a4",
+              fontWeight:    activeTab === tab.id ? "700" : "400",
+              fontSize:      "10px",
+              cursor:        "pointer",
+              display:       "flex",
+              flexDirection: "column",
+              alignItems:    "center",
+              gap:           "4px",
+              padding:       "4px 0",
+              transition:    "color 0.2s",
             }}
           >
             <span style={{ fontSize: "20px" }}>{tab.icon}</span>
@@ -161,12 +151,8 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: rgba(0,82,255,0.3); border-radius: 3px; }
         input::placeholder { color: #4a5568; }
         a { color: inherit; }
-        @media (min-width: 768px) {
-          .mobile-nav { display: none !important; }
-        }
-        @media (max-width: 767px) {
-          .mobile-nav { display: flex !important; }
-        }
+        @media (min-width: 768px) { .mobile-nav { display: none !important; } }
+        @media (max-width: 767px) { .mobile-nav { display: flex !important; } }
       `}</style>
     </div>
   );
