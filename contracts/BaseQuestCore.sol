@@ -7,19 +7,18 @@ contract BaseQuestCore {
     uint256[6] public levelThresholds = [0, 500, 1500, 3500, 7500, 15000];
 
     // Bitmask positions for daily tasks
-    uint256 constant BIT_GM       = 1 << 0;
-    uint256 constant BIT_DEPLOY   = 1 << 1;
-    uint256 constant BIT_SWAP     = 1 << 2;
-    uint256 constant BIT_BRIDGE   = 1 << 3;
-    uint256 constant BIT_GAME     = 1 << 4;
-    uint256 constant BIT_REFERRAL = 1 << 5;
-    uint256 constant BIT_MINT     = 1 << 6;
-    uint256 constant BIT_SWAP_AERO   = 1 << 7;
-    uint256 constant BIT_SWAP_UNI    = 1 << 8;
-    uint256 constant BIT_SWAP_JUMP   = 1 << 9;
-    uint256 constant BIT_SWAP_RELAY  = 1 << 10;
-    uint256 constant BIT_BRIDGE_JUMP = 1 << 11;
-    uint256 constant BIT_BRIDGE_RELAY= 1 << 12;
+    uint256 constant BIT_GM          = 1 << 0;
+    uint256 constant BIT_DEPLOY      = 1 << 1;
+    uint256 constant BIT_SWAP        = 1 << 2;
+    uint256 constant BIT_BRIDGE      = 1 << 3;
+    uint256 constant BIT_GAME        = 1 << 4;
+    uint256 constant BIT_REFERRAL    = 1 << 5;
+    uint256 constant BIT_SWAP_AERO   = 1 << 6;
+    uint256 constant BIT_SWAP_UNI    = 1 << 7;
+    uint256 constant BIT_SWAP_JUMP   = 1 << 8;
+    uint256 constant BIT_SWAP_RELAY  = 1 << 9;
+    uint256 constant BIT_BRIDGE_JUMP = 1 << 10;
+    uint256 constant BIT_BRIDGE_RELAY= 1 << 11;
 
     struct UserProfile {
         uint256 totalXP;
@@ -34,7 +33,7 @@ contract BaseQuestCore {
     }
 
     struct DailyTask {
-        uint256 bits; // bitmask of completed tasks
+        uint256 bits;
         uint256 day;
     }
 
@@ -88,9 +87,9 @@ contract BaseQuestCore {
 
         uint256 today = _today();
         UserProfile storage p = profiles[user];
-        if (p.lastActivityDay == 0)                  { p.streakCount = 1; }
-        else if (today == p.lastActivityDay + 1)     { p.streakCount += 1; }
-        else if (today > p.lastActivityDay + 1)      { p.streakCount = 1; }
+        if (p.lastActivityDay == 0)              { p.streakCount = 1; }
+        else if (today == p.lastActivityDay + 1) { p.streakCount += 1; }
+        else if (today > p.lastActivityDay + 1)  { p.streakCount = 1; }
         p.lastActivityDay = today;
 
         if (p.streakCount > 0 && p.streakCount % 7 == 0) {
@@ -177,15 +176,6 @@ contract BaseQuestCore {
         emit UsernameSet(msg.sender, username);
     }
 
-    function completeMintNFTTask(address nftContract) external payable registered {
-        require(msg.value == 0.00005 ether, "BaseQuestCore: incorrect payment");
-        require(nftContract != address(0), "BaseQuestCore: invalid address");
-        _resetDailyIfNeeded(msg.sender);
-        require(!_isDone(msg.sender, BIT_MINT), "BaseQuestCore: already done today");
-        _setDone(msg.sender, BIT_MINT);
-        _awardXPAndDistribute(msg.sender, 125, "MINT_NFT");
-    }
-
     // ── Swap sub-tasks ────────────────────────────────────────────────────
 
     function completeSwapAerodrome() external payable registered {
@@ -261,7 +251,7 @@ contract BaseQuestCore {
     function getDailyTasks(address user) external view returns (
         bool gmDone, bool deployDone, bool swapDone,
         bool bridgeDone, bool gameDone, bool referralDone,
-        bool profileDone, bool mintDone
+        bool profileDone
     ) {
         uint256 bits  = dailyTasks[user].bits;
         bool    today = (dailyTasks[user].day == _today());
@@ -272,8 +262,7 @@ contract BaseQuestCore {
             today && (bits & BIT_BRIDGE)   != 0,
             today && (bits & BIT_GAME)     != 0,
             today && (bits & BIT_REFERRAL) != 0,
-            profileTaskDone[user],
-            today && (bits & BIT_MINT)     != 0
+            profileTaskDone[user]
         );
     }
 
