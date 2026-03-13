@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
-import { getCoreContract, TASKS, SWAP_PLATFORMS, BRIDGE_PLATFORMS } from "../utils/contracts";
+import { getCoreContract, TASKS, SWAP_PLATFORMS, BRIDGE_PLATFORMS, DEPLOY_PLATFORMS } from "../utils/contracts";
 
 export function useQuests(wallet) {
   const { address, signer, isConnected } = wallet;
@@ -49,6 +49,7 @@ export function useQuests(wallet) {
         swapRelay:     subs.swapRelayDone,
         bridgeJumper:  subs.bridgeJumperDone,
         bridgeRelay:   subs.bridgeRelayDone,
+        deployRemix:   subs.deployRemixDone,
       });
     } catch (err) {
       console.warn("loadUserData error:", err.message);
@@ -157,6 +158,12 @@ export function useQuests(wallet) {
           () => contract.completeBridgeRelay({ value: FEE }),
           "⚡ Relay bridge recorded! +50 XP"
         );
+      // Deploy sub-tasks
+      case "deployRemix":
+        return sendTx(
+          () => contract.completeDeployRemix({ value: FEE }),
+          "🔧 Remix deploy recorded! +50 XP"
+        );
       default:
         setError("Unknown task: " + taskId);
     }
@@ -190,5 +197,6 @@ export function useQuests(wallet) {
     totalDaily,
     SWAP_PLATFORMS,
     BRIDGE_PLATFORMS,
+    DEPLOY_PLATFORMS,
   };
 }
