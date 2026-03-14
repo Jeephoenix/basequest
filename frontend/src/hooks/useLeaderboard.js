@@ -14,8 +14,8 @@ export function useLeaderboard(currentAddress, refreshInterval = 60000) {
       const core     = getCoreContract(provider);
       const [totalRaw, topRaw] = await Promise.all([core.getTotalUsers(), core.getTopUsers(50)]);
       setTotalUsers(Number(totalRaw));
-      const addrs = topRaw.topAddresses;
-      const xps   = topRaw.topXPs;
+      const addrs = topRaw.topAddresses || topRaw[0];
+      const xps   = topRaw.topXPs       || topRaw[1];
       if (!addrs || addrs.length === 0) { setEntries([]); setLoading(false); return; }
       const profiles = await Promise.allSettled(addrs.map(addr => core.getUserProfile(addr)));
       const enriched = addrs.map((addr, i) => {
