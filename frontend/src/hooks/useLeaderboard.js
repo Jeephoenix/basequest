@@ -16,16 +16,23 @@ export function useLeaderboard(currentAddress, refreshInterval = 60000) {
       const total    = Number(totalRaw);
       setTotalUsers(total);
       if (total === 0) { setEntries([]); setLoading(false); return; }
-      const count  = Math.min(total, 50);
-      const topRaw = await core.getTopUsers(count);
-      const addrs  = [...topRaw[0]];
-      const xps    = [...topRaw[1]];
-      if (!addrs || addrs.length === 0) { setEntries([]); setLoading(false); return; }
-      const profileResults = await Promise.allSettled(
-        addrs.map(addr => core.getUserProfile(addr))
-      );
+      const count = Math.min(total, 50);
+
+      // Fetch addresses one by one
+      const addrPromises = [];
+      for (let i = 0; i < count; i++) {
+        addrPromises.push(core.allUsers(i));
+      }
+      const addrs = await Promise.all(addrPromises);
+
+      // Fetch XP and profiles
+      const [xpResults, profileResults] = await Promise.all([
+        Promise.allSettled(addrs.map(a => core.getUserXP(a))),
+        Promise.allSettled(addrs.map(a => core.getUserProfile(a))),
+      ]);
+
       const enriched = addrs.map((addr, i) => {
-        const xp  = Number(xps[i]);
+        const xp  = xpResults[i].status === "fulfilled" ? Number(xpResults[i].value) : 0;
         const lvl = getLevelInfo(xp);
         let tasksCompleted = 0, streakCount = 0, username = "";
         if (profileResults[i].status === "fulfilled") {
@@ -34,7 +41,6 @@ export function useLeaderboard(currentAddress, refreshInterval = 60000) {
           username       = profileResults[i].value.username || "";
         }
         return {
-          rank:          i + 1,
           address:       addr,
           display:       username || shortAddr(addr),
           xp,
@@ -44,7 +50,12 @@ export function useLeaderboard(currentAddress, refreshInterval = 60000) {
           isCurrentUser: addr.toLowerCase() === currentAddress?.toLowerCase(),
         };
       });
-      setEntries(enriched);
+
+      const sorted = enriched
+        .sort((a, b) => b.xp - a.xp)
+        .map((e, i) => ({ ...e, rank: i + 1 }));
+
+      setEntries(sorted);
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
