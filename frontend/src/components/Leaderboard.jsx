@@ -67,11 +67,11 @@ export default function Leaderboard({ wallet }) {
           borderRadius: "16px",
           padding:      "24px",
           textAlign:    "center",
-          color:        "#ff6b6b",
-          fontSize:     "12px",
+          color:        "#8892a4",
+          fontSize:     "14px",
           marginBottom: "16px",
         }}>
-          {error}
+          Unable to load leaderboard 😪 please tap Refresh to try again.
         </div>
       )}
 
