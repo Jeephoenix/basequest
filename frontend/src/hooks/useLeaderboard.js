@@ -1,4 +1,14 @@
-const fetchLeaderboard = useCallback(async () => {
+import { useState, useEffect, useCallback } from "react";
+import { getCoreContract, getReadProvider, getLevelInfo, shortAddr } from "../utils/contracts.js";
+
+export function useLeaderboard(currentAddress, refreshInterval = 60000) {
+  const [entries,     setEntries]     = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [totalUsers,  setTotalUsers]  = useState(0);
+
+  const fetchLeaderboard = useCallback(async () => {
     try {
       const provider = getReadProvider();
       const core     = getCoreContract(provider);
@@ -11,20 +21,17 @@ const fetchLeaderboard = useCallback(async () => {
 
       const count = Math.min(total, 50);
 
-      // Fetch user addresses one by one using allUsers mapping
       const addrPromises = [];
       for (let i = 0; i < count; i++) {
         addrPromises.push(core.allUsers(i));
       }
       const addrs = await Promise.all(addrPromises);
 
-      // Fetch XP and profiles for each address
       const [xpResults, profileResults] = await Promise.all([
         Promise.allSettled(addrs.map(addr => core.getUserXP(addr))),
         Promise.allSettled(addrs.map(addr => core.getUserProfile(addr))),
       ]);
 
-      // Build entries
       const enriched = addrs.map((addr, i) => {
         const xp  = xpResults[i].status === "fulfilled" ? Number(xpResults[i].value) : 0;
         const lvl = getLevelInfo(xp);
@@ -35,8 +42,8 @@ const fetchLeaderboard = useCallback(async () => {
           username       = profileResults[i].value.username || "";
         }
         return {
-          address: addr,
-          display: username || shortAddr(addr),
+          address:       addr,
+          display:       username || shortAddr(addr),
           xp,
           level:         lvl.current,
           tasksCompleted,
@@ -45,7 +52,6 @@ const fetchLeaderboard = useCallback(async () => {
         };
       });
 
-      // Sort by XP descending and add rank
       const sorted = enriched
         .sort((a, b) => b.xp - a.xp)
         .map((e, i) => ({ ...e, rank: i + 1 }));
@@ -60,3 +66,13 @@ const fetchLeaderboard = useCallback(async () => {
       setLoading(false);
     }
   }, [currentAddress]);
+
+  useEffect(() => {
+    fetchLeaderboard();
+    const interval = setInterval(fetchLeaderboard, refreshInterval);
+    return () => clearInterval(interval);
+  }, [fetchLeaderboard, refreshInterval]);
+
+  const myRank = currentAddress ? (entries.find(e => e.isCurrentUser)?.rank ?? null) : null;
+  return { entries, loading, error, lastUpdated, totalUsers, myRank, refresh: fetchLeaderboard };
+}
